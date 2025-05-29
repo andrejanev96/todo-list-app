@@ -1,5 +1,6 @@
 import { createTodo } from "./todo";
 import { createProject } from "./project";
+import { storage } from "./storage";
 
 export class TodoApp {
   constructor() {
@@ -10,17 +11,55 @@ export class TodoApp {
     this.init();
   }
   init() {
+    // Load projects and todos from storage
+    this.loadFromStorage();
     // Create default project if no project exists
     if (this.projects.length === 0) {
       const defaultProject = createProject("Default Project");
       this.projects.push(defaultProject);
       this.currentProjectId = defaultProject.id;
+      this.saveToStorage();
     }
+  }
+
+  loadFromStorage() {
+    // Get all saved data from localStorage
+    const data = storage.loadAll();
+
+    this.projects = data.projects.map((projectData) => {
+      const project = createProject(projectData.name);
+      Object.assign(project, projectData);
+      return project;
+    });
+
+    this.todos = data.todos.map((todoData) => {
+      const todo = createTodo(
+        todoData.title,
+        todoData.description,
+        todoData.dueDate,
+        todoData.priority,
+        todoData.projectId
+      );
+      Object.assign(todo, todoData);
+      return todo;
+    });
+
+    this.currentProjectId = data.currentProject;
+
+    if (this.currentProjectId && !this.getProject(this.currentProjectId)) {
+      this.currentProjectId =
+        this.projects.length > 0 ? this.projects[0].id : null;
+    }
+  }
+
+  saveToStorage() {
+    storage.saveAll(this.projects, this.todos, this.currentProjectId);
   }
 
   createProject(name) {
     const project = createProject(name);
     this.projects.push(project);
+    this.saveToStorage();
     return project;
   }
 
@@ -32,7 +71,7 @@ export class TodoApp {
     const project = this.getProject(projectId);
     if (project) {
       project.todos.forEach((todoId) => {
-        this.deleteTodo(todoId);
+        this.deleteTodo(todoId, false); // ADD: false parameter
       });
     }
     this.projects = this.projects.filter((p) => p.id !== projectId);
@@ -41,6 +80,9 @@ export class TodoApp {
     if (this.currentProjectId === projectId) {
       this.currentProjectId = this.projects[0].id;
     }
+
+    this.saveToStorage();
+    return true;
   }
 
   getProject(projectId) {
@@ -54,6 +96,7 @@ export class TodoApp {
   setCurrentProject(projectId) {
     if (this.getProject(projectId)) {
       this.currentProjectId = projectId;
+      this.saveToStorage();
       return true;
     }
     return false;
@@ -62,7 +105,13 @@ export class TodoApp {
   // Todo methods
 
   createTodo(title, description, dueDate, priority = "medium") {
-    const todo = createTodo(title, description, dueDate, priority);
+    const todo = createTodo(
+      title,
+      description,
+      dueDate,
+      priority,
+      this.currentProjectId
+    );
     this.todos.push(todo);
 
     // Add todo to current project
@@ -70,10 +119,11 @@ export class TodoApp {
     if (currentProject) {
       currentProject.addTodo(todo.id);
     }
+    this.saveToStorage();
     return todo;
   }
 
-  deleteTodo(todoId) {
+  deleteTodo(todoId, shouldSave = true) {
     // Remove from todos array
     this.todos = this.todos.filter((t) => t.id !== todoId);
 
@@ -81,6 +131,10 @@ export class TodoApp {
     this.projects.forEach((project) => {
       project.removeTodo(todoId);
     });
+
+    if (shouldSave) {
+      this.saveToStorage();
+    }
   }
 
   getTodo(todoId) {
